@@ -16,8 +16,11 @@ api.interceptors.request.use((config) => {
 });
 
 export const authAPI = {
-  googleLogin: (credential) => api.post('/auth/google', { access_token: credential }),
+  register: (userData) => api.post('/auth/register', userData),
+  login: (credentials) => api.post('/auth/login', credentials),
+  googleLogin: (accessToken) => api.post('/auth/google', { access_token: accessToken }),
   getCurrentUser: () => api.get('/users/me'),
 };
+
 
 export default api;

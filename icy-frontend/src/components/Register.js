@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import GoogleAuth from './auth';
 import { authAPI } from '../service/api';
 
-const Login = ({ onLogin, onSwitchToRegister }) => {
+const Register = ({ onRegister, onSwitchToLogin }) => {
   const [formData, setFormData] = useState({
     email: '',
-    password: ''
+    first_name: '',
+    last_name: '',
+    password: '',
+    confirmPassword: ''
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -22,29 +25,46 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
     setError('');
     setIsLoading(true);
 
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const response = await authAPI.login(formData);
+      const response = await authAPI.register({
+        email: formData.email,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        password: formData.password
+      });
       
       localStorage.setItem('token', response.data.access_token);
-      onLogin(response.data.user);
+      onRegister(response.data.user);
     } catch (error) {
-      setError(error.response?.data?.detail || 'Login failed');
+      setError(error.response?.data?.detail || 'Registration failed');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleSuccess = (user) => {
-    onLogin(user);
+    onRegister(user);
   };
 
   const handleGoogleFailure = (error) => {
-    setError('Google login failed');
+    setError('Google registration failed');
   };
 
   const containerStyle = {
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #60a5fa 0%, #a855f7 50%, #ec4899 100%)',
+    background: 'linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #ef4444 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -67,7 +87,8 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
     color: 'white',
     fontSize: '1rem',
     outline: 'none',
-    transition: 'all 0.3s ease'
+    transition: 'all 0.3s ease',
+    marginBottom: '0.5rem'
   };
 
   const buttonStyle = {
@@ -88,8 +109,8 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
       <div className="glass animate-fade-in" style={formContainerStyle}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'white', marginBottom: '0.5rem' }}>ICY</h1>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', color: 'white', marginBottom: '0.5rem' }}>Welcome Back</h2>
-          <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Sign in to your account</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', color: 'white', marginBottom: '0.5rem' }}>Create Account</h2>
+          <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Join us and explore amazing features</p>
         </div>
 
         {error && (
@@ -123,15 +144,68 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
             />
           </div>
           
-          <div style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', color: 'rgba(255, 255, 255, 0.9)', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
+                First Name
+              </label>
+              <input
+                type="text"
+                name="first_name"
+                placeholder="First name"
+                value={formData.first_name}
+                onChange={handleChange}
+                required
+                style={inputStyle}
+                onFocus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(255, 255, 255, 0.3)'}
+                onBlur={(e) => e.target.style.boxShadow = 'none'}
+              />
+            </div>
+            
+            <div>
+              <label style={{ display: 'block', color: 'rgba(255, 255, 255, 0.9)', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
+                Last Name
+              </label>
+              <input
+                type="text"
+                name="last_name"
+                placeholder="Last name"
+                value={formData.last_name}
+                onChange={handleChange}
+                required
+                style={inputStyle}
+                onFocus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(255, 255, 255, 0.3)'}
+                onBlur={(e) => e.target.style.boxShadow = 'none'}
+              />
+            </div>
+          </div>
+          
+          <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', color: 'rgba(255, 255, 255, 0.9)', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
               Password
             </label>
             <input
               type="password"
               name="password"
-              placeholder="Enter your password"
+              placeholder="Create a password"
               value={formData.password}
+              onChange={handleChange}
+              required
+              style={inputStyle}
+              onFocus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(255, 255, 255, 0.3)'}
+              onBlur={(e) => e.target.style.boxShadow = 'none'}
+            />
+          </div>
+          
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={{ display: 'block', color: 'rgba(255, 255, 255, 0.9)', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>
+              Confirm Password
+            </label>
+            <input
+              type="password"
+              name="confirmPassword"
+              placeholder="Confirm your password"
+              value={formData.confirmPassword}
               onChange={handleChange}
               required
               style={inputStyle}
@@ -153,10 +227,10 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
                   <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                Signing in...
+                Creating account...
               </div>
             ) : (
-              'Sign In'
+              'Create Account'
             )}
           </button>
         </form>
@@ -171,14 +245,14 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
           <GoogleAuth
             onSuccess={handleGoogleSuccess}
             onFailure={handleGoogleFailure}
-            buttonText="Sign in with Google"
+            buttonText="Sign up with Google"
           />
         </div>
         
         <div style={{ textAlign: 'center' }}>
-          <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Don't have an account? </span>
+          <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>Already have an account? </span>
           <button 
-            onClick={onSwitchToRegister} 
+            onClick={onSwitchToLogin} 
             style={{ 
               background: 'none', 
               border: 'none', 
@@ -191,7 +265,7 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
             onMouseOver={(e) => e.target.style.color = 'rgba(255, 255, 255, 0.8)'}
             onMouseOut={(e) => e.target.style.color = 'white'}
           >
-            Sign up here
+            Sign in here
           </button>
         </div>
       </div>
@@ -210,4 +284,4 @@ const Login = ({ onLogin, onSwitchToRegister }) => {
   );
 };
 
-export default Login;
+export default Register;

@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MONGODB_URI = os.getenv("MONGODB_URI")
-DB_NAME = "google-auth"
+DB_NAME = "auth-app"
 
-client = AsyncIOMotorClient(MONGODB_URI)
+client = AsyncIOMotorClient(MONGODB_URI, tls=True)
 db = client[DB_NAME]
 users_collection = db["users"]
 

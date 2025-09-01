@@ -10,6 +10,8 @@ from app.schema.schemas import TokenData
 from app.Database.Database import get_user_collection
 from bson import ObjectId
 import dotenv
+from app.Database.models import User
+
 
 dotenv.load_dotenv()
 
@@ -18,7 +20,7 @@ ALGORITHM = os.getenv("ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -30,28 +32,19 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+
 async def verify_google_token(token: str):
     try:
-        # The token is now a JWT credential from @react-oauth/google
-        print(f"Verifying token with client ID: {GOOGLE_CLIENT_ID}")
         id_info = id_token.verify_oauth2_token(
-            token, 
-            google_requests.Request(), 
-            GOOGLE_CLIENT_ID,
-            clock_skew_in_seconds=10  # Allow some clock skew
+            token, google_requests.Request(), GOOGLE_CLIENT_ID
         )
-        
-        # Verify the issuer
         if id_info['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
             raise ValueError('Wrong issuer.')
-            
-        print(f"Token verified successfully for user: {id_info.get('email')}")
         return id_info
-    except ValueError as e:
-        print(f"Token verification failed: {e}")
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {str(e)}",
+            detail="Invalid Google authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -66,12 +59,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
-        token_data = TokenData(email=email)
     except JWTError:
         raise credentials_exception
     
     users_collection = get_user_collection()
-    user = await users_collection.find_one({"email": token_data.email})
+    user = await users_collection.find_one({"email": email})
     if user is None:
         raise credentials_exception
     return user

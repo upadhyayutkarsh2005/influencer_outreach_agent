@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.service import auth
 from app.schema import schemas
 from app.Database.Database import get_user_collection 
+from app.Database.models import User  # Import User from models, not auth
 from bson import ObjectId
 import os
 from dotenv import load_dotenv
@@ -24,21 +25,117 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/auth/google")
+@app.post("/auth/register", response_model=schemas.Token)
+async def register_user(user_data: schemas.UserCreateManual):
+    users_collection = get_user_collection()
+    
+    # Check if user already exists
+    existing_user = await users_collection.find_one({"email": user_data.email})
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists"
+        )
+    
+    # Hash password and create user
+    password_hash = User.hash_password(user_data.password)
+    new_user = {
+        "email": user_data.email,
+        "first_name": user_data.first_name,
+        "last_name": user_data.last_name,
+        "password_hash": password_hash,
+        "auth_method": "manual"
+    }
+    
+    result = await users_collection.insert_one(new_user)
+    user = await users_collection.find_one({"_id": result.inserted_id})
+    
+    # Create access token
+    access_token = auth.create_access_token(data={"sub": user["email"]})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(user["_id"]),
+            "email": user["email"],
+            "first_name": user["first_name"],
+            "last_name": user["last_name"],
+            "auth_method": user["auth_method"]
+        }
+    }
+
+
+@app.post("/auth/login", response_model=schemas.Token)
+async def login_user(login_data: schemas.UserLogin):
+    users_collection = get_user_collection()
+    
+    # Find user
+    user = await users_collection.find_one({"email": login_data.email})
+    if not user or user.get("auth_method") != "manual":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    
+    # Convert ObjectId to string for Pydantic model
+    user_copy = dict(user)
+    if "_id" in user_copy and user_copy["_id"]:
+        user_copy["_id"] = str(user_copy["_id"])
+    
+    # Verify password
+    user_obj = User(**user_copy)
+    if not user_obj.verify_password(login_data.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    
+    # Create access token
+    access_token = auth.create_access_token(data={"sub": user["email"]})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(user["_id"]),
+            "email": user["email"],
+            "first_name": user["first_name"],
+            "last_name": user["last_name"],
+            "auth_method": user["auth_method"]
+        }
+    }
+
+@app.post("/auth/google", response_model=schemas.Token)
 async def google_auth(request: schemas.GoogleAuthRequest):
-    """Authenticate with Google token"""
-    print(f"Received credential: {request.access_token[:50]}...")  # Log first 50 chars for security
     try:
-        # Verify Google token (now handling JWT credential)
+        # Verify Google token
         user_info = await auth.verify_google_token(request.access_token)
-        print(f"Google user info: {user_info}")
         
-        # Check if user exists
         users_collection = get_user_collection()
-        existing_user = await users_collection.find_one({"google_id": user_info["sub"]})
+        
+        # Check if user exists by google_id or email
+        existing_user = await users_collection.find_one({
+            "$or": [
+                {"google_id": user_info["sub"]},
+                {"email": user_info["email"]}
+            ]
+        })
         
         if existing_user:
-            user_data = existing_user
+            # Update existing user with Google info if needed
+            if not existing_user.get("google_id"):
+                await users_collection.update_one(
+                    {"_id": existing_user["_id"]},
+                    {"$set": {
+                        "google_id": user_info["sub"],
+                        "auth_method": "google",
+                        "profile_picture": user_info.get("picture")
+                    }}
+                )
+                user = await users_collection.find_one({"_id": existing_user["_id"]})
+            else:
+                user = existing_user
         else:
             # Create new user
             new_user = {
@@ -47,24 +144,24 @@ async def google_auth(request: schemas.GoogleAuthRequest):
                 "first_name": user_info.get("given_name", ""),
                 "last_name": user_info.get("family_name", ""),
                 "profile_picture": user_info.get("picture"),
+                "auth_method": "google"
             }
             result = await users_collection.insert_one(new_user)
-            user_data = await users_collection.find_one({"_id": result.inserted_id})
+            user = await users_collection.find_one({"_id": result.inserted_id})
         
         # Create access token
-        access_token = auth.create_access_token(
-            data={"sub": user_data["email"]}
-        )
+        access_token = auth.create_access_token(data={"sub": user["email"]})
         
         return {
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
-                "id": str(user_data["_id"]),
-                "email": user_data["email"],
-                "first_name": user_data["first_name"],
-                "last_name": user_data["last_name"],
-                "profile_picture": user_data.get("profile_picture"),
+                "id": str(user["_id"]),
+                "email": user["email"],
+                "first_name": user["first_name"],
+                "last_name": user["last_name"],
+                "profile_picture": user.get("profile_picture"),
+                "auth_method": user["auth_method"]
             }
         }
     
@@ -72,23 +169,24 @@ async def google_auth(request: schemas.GoogleAuthRequest):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
-            headers={"WWW-Authenticate": "Bearer"},
         )
-
-@app.get("/users/me")
+        
+        
+@app.get("/users/me", response_model=schemas.UserResponse)
 async def read_users_me(current_user: dict = Depends(auth.get_current_user)):
-    """Get current user information"""
     return {
         "id": str(current_user["_id"]),
         "email": current_user["email"],
         "first_name": current_user["first_name"],
         "last_name": current_user["last_name"],
         "profile_picture": current_user.get("profile_picture"),
+        "auth_method": current_user["auth_method"],
+        "created_at": current_user["created_at"]
     }
 
 @app.get("/")
 async def root():
-    return {"message": "Google Auth API is running"}
+    return {"message": "Dual Authentication API is running"}
 
 if __name__ == "__main__":
     import uvicorn
